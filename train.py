@@ -122,15 +122,7 @@ def main(args):
             batch_id, mask_id = gen_mask_id(NUM_PATCH, NUM_MASKS, x.size(0))
 
             # grab the supposed-masked tokens as labels
-            basic_mask = torch.tensor([[0, 1], 
-                                      [1, 1]], dtype=torch.bool)  # 2x2 pattern
-
-            patch_mask = basic_mask.repeat(8, 8)  # Now 16x16
-
-            patched_x = patch_fn(x)  # [batch_size, num_patches, patch_dim]
-            patches = patched_x.view(batch_size, num_patches, channels, 16, 16)
-
-            y = patches[..., patch_mask]  # This will select all masked positions within each patch
+            y = patch_fn(x)[batch_id, mask_id]
 
             x, y, batch_id, mask_id = map(
                 lambda z: z.to(device), (x, y, batch_id, mask_id)

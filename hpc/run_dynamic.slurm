@@ -2,13 +2,13 @@
 #SBATCH --job-name=et-dynamic
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --partition=A40devel
+#SBATCH --partition=A40short
 #SBATCH --gpus=1
 # SBATCH --gres=gpu:1                 # ← uncomment if your cluster uses --gres instead of --gpus
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=0:30:00
+#SBATCH --time=3:30:00
 
 set -euo pipefail
 
@@ -113,10 +113,10 @@ HN_MULT=4.0
 ATTN_BETA=0.125
 ATTN_BIAS=False
 HN_BIAS=False
-TIME_STEPS=12
-BLOCKS=1
+TIME_STEPS=8
+BLOCKS=4
 ALPHA_INIT=1.0
-EPOCHS=100
+EPOCHS=64
 BATCH_SIZE=128
 LR=8e-5
 B1=0.9
