@@ -249,6 +249,12 @@ class ET(nn.Module):
         if mask is not None:
             x[:, mask] = self.mask
 
+        # create grad_mask for visualize steps as well
+        grad_mask = None
+        if mask is not None:
+            false_col = torch.zeros(mask.shape[0], 1, dtype=torch.bool, device=mask.device)
+            grad_mask = torch.cat([false_col, mask], dim=1)
+
         x = torch.cat([self.cls.repeat(x.size(0), 1, 1), x], dim=1)
         x = self.pos(x)
 
@@ -259,6 +265,8 @@ class ET(nn.Module):
             for _ in range(self.K):
                 g = norm(x)
                 dEdg, E = torch.func.grad_and_value(et)(g, attn_mask)
+                if grad_mask is not None:
+                    dEdg = dEdg.masked_fill(~grad_mask[..., None], 0.)
 
                 x = x - alpha * dEdg
 
@@ -274,6 +282,7 @@ class ET(nn.Module):
         self,
         x: TENSOR,
         alpha: float,
+        mask: Optional[TENSOR] = None,
         *,
         attn_mask: Optional[Sequence[TENSOR]] = None,
         return_energy: bool = False,
@@ -284,6 +293,7 @@ class ET(nn.Module):
             for _ in range(self.K):
                 g = norm(x)
                 dEdg, E = torch.func.grad_and_value(et)(g, attn_mask)
+                dEdg = dEdg.masked_fill(~mask[..., None], 0.)
 
                 x = x - alpha * dEdg
 
@@ -316,8 +326,16 @@ class ET(nn.Module):
         x = torch.cat([self.cls.repeat(x.size(0), 1, 1), x], dim=1)
         x = self.pos(x)
 
+        # ------------------------------------------------------------------
+        # Build a gradient-mask that aligns with CLS + tokens sequence length
+        # (prepend a 'False' column for the CLS token so shape == B × (N+1))
+        grad_mask = None
+        if mask is not None:
+            false_col = torch.zeros(mask.shape[0], 1, dtype=torch.bool, device=mask.device)
+            grad_mask = torch.cat([false_col, mask], dim=1)  # shape (B, N+1)
+
         x, energies = self.evolve(
-            x, alpha, attn_mask=attn_mask, return_energy=return_energy
+            x, alpha, mask=grad_mask, attn_mask=attn_mask, return_energy=return_energy
         )
 
         x = self.decode(x)

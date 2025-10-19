@@ -1,0 +1,78 @@
+#!/bin/bash
+#PBS -N et-alpha-ts-sweep
+#PBS -o logs/$PBS_JOBNAME_$PBS_JOBID_$PBS_ARRAYID.out
+#PBS -e logs/$PBS_JOBNAME_$PBS_JOBID_$PBS_ARRAYID.err
+#PBS -l select=1:ncpus=4:mem=16gb:ngpus=1  # adjust for your cluster
+#PBS -l walltime=24:00:00
+#PBS -J 0-11
+
+set -euo pipefail
+
+# --- User config (edit as needed) ---
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONDA_ENV="et"                   # change to your env name
+PYTHON_BIN="python"              # or full path to python
+
+# Training knobs
+EPOCHS=100
+BATCH_SIZE=128
+LR=8e-5
+DATA_PATH="./"
+DATA_NAME="cifar10"
+
+# Grid to sweep
+ALPHAS=(0.5 1 5 10)
+TSS=(8 12 16)
+
+# --- Environment setup (modules / conda) ---
+module purge || true
+# module load cuda/12.1          # uncomment and adjust for your cluster
+# module load anaconda/2024.06   # uncomment and adjust for your cluster
+
+if command -v conda >/dev/null 2>&1; then
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate "$CONDA_ENV" || true
+fi
+
+cd "$PROJECT_DIR"
+mkdir -p "$PROJECT_DIR/logs"
+
+# --- Map array index to (alpha, time_steps) ---
+NA=${#ALPHAS[@]}
+NT=${#TSS[@]}
+IDX=${PBS_ARRAYID:-0}
+
+ai=$(( IDX % NA ))
+ti=$(( IDX / NA ))
+
+ALPHA=${ALPHAS[$ai]}
+TS=${TSS[$ti]}
+
+RESULT_DIR="results/sweep/alpha_${ALPHA}_ts_${TS}"
+mkdir -p "$RESULT_DIR"
+
+echo "PBS_ARRAYID=$PBS_ARRAYID -> alpha=$ALPHA, time_steps=$TS"
+echo "Writing to $RESULT_DIR"
+
+$PYTHON_BIN train.py \
+  --tkn-dim 128 \
+  --qk-dim 64 \
+  --nheads 12 \
+  --hn-mult 4.0 \
+  --attn-beta 0.125 \
+  --attn-bias False \
+  --hn-bias False \
+  --time-steps "$TS" \
+  --alpha "$ALPHA" \
+  --blocks 1 \
+  --epochs "$EPOCHS" \
+  --result-dir "$RESULT_DIR" \
+  --batch-size "$BATCH_SIZE" \
+  --lr "$LR" \
+  --b1 0.9 \
+  --b2 0.999 \
+  --mask-ratio 0.85 \
+  --weight-decay 0.0001 \
+  --data-path "$DATA_PATH" \
+  --data-name "$DATA_NAME"
