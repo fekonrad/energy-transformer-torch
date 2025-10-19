@@ -1,4 +1,5 @@
 import os
+import csv
 import torch
 import argparse
 import numpy as np
@@ -87,6 +88,7 @@ def main(args):
     )
 
     start_epoch = 1
+    alpha_history = []  # list of [alpha_block_0, alpha_block_1, ...] per epoch
     latest_checkpoint = get_latest_file(MODEL_FOLDER, ".pth")
     if latest_checkpoint is not None:
         if accelerator.is_main_process:
@@ -97,6 +99,8 @@ def main(args):
         opt.load_state_dict(checkpoint["opt"])
         model.load_state_dict(checkpoint["model"])
         scheduler.load_state_dict(checkpoint["scheduler"])
+        if "alpha_history" in checkpoint:
+            alpha_history = checkpoint["alpha_history"]
 
     model, opt, train_loader, test_loader, scheduler = accelerator.prepare(
         model, opt, train_loader, test_loader, scheduler
@@ -145,8 +149,14 @@ def main(args):
         if accelerator.is_main_process:
             avg_loss = torch.tensor(running_loss / len(train_loader), device=device)
             avg_loss = avg_loss / accelerator.num_processes
+
+            # collect current alpha values (per block)
+            base_model = model.module if hasattr(model, "module") else model
+            cur_alphas = [float(base_model._alpha_value(b).detach().cpu()) for b in range(len(base_model.alpha_raw))]
+            alpha_history.append(cur_alphas)
+
             print(
-                f"Epoch: {epoch}/{args.epochs}, Loss: {avg_loss:.6f}, Time: {epoch_time:.5f}s",
+                f"Epoch: {epoch}/{args.epochs}, Loss: {avg_loss:.6f}, Time: {epoch_time:.5f}s, Alphas: {cur_alphas}",
                 flush=True,
             )
 
@@ -177,6 +187,7 @@ def main(args):
                         "scheduler": scheduler.state_dict(),
                         "opt": opt.state_dict(),
                         "args": args,
+                        "alpha_history": alpha_history,
                     }
                 except Exception:
                     ckpt = {
@@ -185,8 +196,40 @@ def main(args):
                         "scheduler": scheduler.state_dict(),
                         "opt": opt.state_dict(),
                         "args": args,
+                        "alpha_history": alpha_history,
                     }
                 torch.save(ckpt, os.path.join(MODEL_FOLDER, f"{epoch}.pth"))
+
+                # write alpha history CSV and PNG plot
+                csv_path = os.path.join(args.result_dir, "alpha_history.csv")
+                with open(csv_path, "w", newline="") as f:
+                    writer = csv.writer(f)
+                    header = ["epoch"] + [f"alpha_{i}" for i in range(len(alpha_history[-1]))]
+                    writer.writerow(header)
+                    for ep_idx, row in enumerate(alpha_history, start=1):
+                        writer.writerow([ep_idx] + row)
+
+                # Try to plot using matplotlib if available
+                try:
+                    import matplotlib
+                    matplotlib.use("Agg")
+                    import matplotlib.pyplot as plt
+
+                    xs = list(range(1, len(alpha_history) + 1))
+                    plt.figure(figsize=(6, 4))
+                    num_blocks = len(alpha_history[-1])
+                    for i in range(num_blocks):
+                        ys = [row[i] for row in alpha_history]
+                        plt.plot(xs, ys, label=f"alpha_{i}")
+                    plt.xlabel("Epoch")
+                    plt.ylabel("Alpha value")
+                    plt.title("Trainable alpha per block")
+                    plt.legend()
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(args.result_dir, "alpha_history.png"), dpi=150)
+                    plt.close()
+                except Exception as e:
+                    print(f"[warn] Matplotlib plotting failed: {e}")
 
             accelerator.wait_for_everyone()
 

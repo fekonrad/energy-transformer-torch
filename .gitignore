@@ -150,4 +150,8 @@ checklink/cookies.txt
 llogs
 
 # cifar stuff
+cifar-10-python.tar.gz
 cifar-10-batches-py/
+
+# model stuff
+results/ 
