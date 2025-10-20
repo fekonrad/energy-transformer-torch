@@ -90,23 +90,23 @@ def main(args):
     start_epoch = 1
     alpha_history = []  # list of [alpha_block_0, alpha_block_1, ...] per epoch
     loss_history = []   # average loss per epoch
-    latest_checkpoint = get_latest_file(MODEL_FOLDER, ".pth")
-    if latest_checkpoint is not None:
-        if accelerator.is_main_process:
-            print(f"Found latest checkpoint file: {latest_checkpoint}", flush=True)
-
-        checkpoint = torch.load(latest_checkpoint, map_location="cpu")
-        start_epoch = checkpoint["epoch"]
-        opt.load_state_dict(checkpoint["opt"])
-        model.load_state_dict(checkpoint["model"])
-        scheduler.load_state_dict(checkpoint["scheduler"])
-        if "alpha_history" in checkpoint:
-            alpha_history = checkpoint["alpha_history"]
-        if "loss_history" in checkpoint:
-            try:
-                loss_history = list(checkpoint["loss_history"])  # type: ignore
-            except Exception:
-                loss_history = []
+    # Always start training from scratch: disable automatic checkpoint loading
+    # latest_checkpoint = get_latest_file(MODEL_FOLDER, ".pth")
+    # if latest_checkpoint is not None:
+    #     if accelerator.is_main_process:
+    #         print(f"Found latest checkpoint file: {latest_checkpoint}", flush=True)
+    #     checkpoint = torch.load(latest_checkpoint, map_location="cpu")
+    #     start_epoch = checkpoint["epoch"]
+    #     opt.load_state_dict(checkpoint["opt"])
+    #     model.load_state_dict(checkpoint["model"])
+    #     scheduler.load_state_dict(checkpoint["scheduler"])
+    #     if "alpha_history" in checkpoint:
+    #         alpha_history = checkpoint["alpha_history"]
+    #     if "loss_history" in checkpoint:
+    #         try:
+    #             loss_history = list(checkpoint["loss_history"])  # type: ignore
+    #         except Exception:
+    #             loss_history = []
 
     model, opt, train_loader, test_loader, scheduler = accelerator.prepare(
         model, opt, train_loader, test_loader, scheduler

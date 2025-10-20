@@ -240,16 +240,16 @@ def main(args):
     )
 
     start_epoch = 1
-    latest_checkpoint = get_latest_file(MODEL_FOLDER, ".pth")
-    if latest_checkpoint is not None:
-        if accelerator.is_main_process:
-            print(f"Found latest checkpoint file: {latest_checkpoint}", flush=True)
-
-        checkpoint = torch.load(latest_checkpoint, map_location="cpu")
-        start_epoch = checkpoint["epoch"]
-        opt.load_state_dict(checkpoint["opt"])
-        model.load_state_dict(checkpoint["model"])
-        scheduler.load_state_dict(checkpoint["scheduler"])
+    # Always start training from scratch: disable automatic checkpoint loading
+    # latest_checkpoint = get_latest_file(MODEL_FOLDER, ".pth")
+    # if latest_checkpoint is not None:
+    #     if accelerator.is_main_process:
+    #         print(f"Found latest checkpoint file: {latest_checkpoint}", flush=True)
+    #     checkpoint = torch.load(latest_checkpoint, map_location="cpu")
+    #     start_epoch = checkpoint["epoch"]
+    #     opt.load_state_dict(checkpoint["opt"])
+    #     model.load_state_dict(checkpoint["model"])
+    #     scheduler.load_state_dict(checkpoint["scheduler"])
 
     model, opt, train_loader, test_loader, scheduler = accelerator.prepare(
         model, opt, train_loader, test_loader, scheduler
@@ -257,6 +257,8 @@ def main(args):
 
     # visual_num already defined above (kept for consistency)
     training_display = range(start_epoch, args.epochs + 1)
+    # Track loss over epochs for plotting
+    loss_history = []
 
     for i in training_display:
         running_loss = 0.0
@@ -313,8 +315,13 @@ def main(args):
             epoch_time = end_time - start_time
             avg_loss = torch.tensor(running_loss / len(train_loader), device=device)
             avg_loss = avg_loss / accelerator.num_processes
+            try:
+                avg_loss_scalar = float(avg_loss.detach().cpu())
+            except Exception:
+                avg_loss_scalar = float(running_loss / max(1, len(train_loader)))
+            loss_history.append(avg_loss_scalar)
             print(
-                f"Epoch: {i}/{args.epochs}, Loss: {avg_loss:.6f}, Time: {epoch_time:.5f}s",
+                f"Epoch: {i}/{args.epochs}, Loss: {avg_loss_scalar:.6f}, Time: {epoch_time:.5f}s",
                 flush=True,
             )
 
@@ -376,6 +383,36 @@ def main(args):
                         "args": args,
                     }
                 torch.save(ckpt, MODEL_FOLDER + f"/{i}.pth")
+
+                # Write loss history CSV and plot running loss curve
+                loss_csv = os.path.join(args.result_dir, "loss_history.csv")
+                try:
+                    with open(loss_csv, "w", newline="") as f:
+                        import csv
+                        writer = csv.writer(f)
+                        writer.writerow(["epoch", "loss"])
+                        for ep_idx, v in enumerate(loss_history, start=1):
+                            writer.writerow([ep_idx, v])
+                except Exception as e:
+                    print(f"[warn] Writing loss_history.csv failed: {e}")
+
+                try:
+                    import matplotlib
+                    matplotlib.use("Agg")
+                    import matplotlib.pyplot as plt
+
+                    xs = list(range(1, len(loss_history) + 1))
+                    plt.figure(figsize=(6, 4))
+                    plt.plot(xs, loss_history, label="train_loss")
+                    plt.xlabel("Epoch")
+                    plt.ylabel("Loss")
+                    plt.title("Training loss per epoch")
+                    plt.legend()
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(args.result_dir, "loss_history.png"), dpi=150)
+                    plt.close()
+                except Exception as e:
+                    print(f"[warn] Matplotlib loss plotting failed: {e}")
             accelerator.wait_for_everyone()
 
 

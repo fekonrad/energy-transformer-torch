@@ -121,23 +121,23 @@ def run_job(
 @app.local_entrypoint()
 def main(
     # Grid (mirrors hpc/sweep_alpha_ts.slurm)
-    alphas = [0.25, 0.5, 1.0, 2.0, 4.0],
-    time_steps_list = [4],
+    alphas = [5.0],
+    time_steps_list = [12],
     # Training knobs (defaults mirror sweep script)
     epochs: int = 32,
     batch_size: int = 128,
     lr: float = 8e-4,
     data_name: str = "cifar10",
     # Model knobs
-    tkn_dim: int = 256,
+    tkn_dim: int = 768,
     qk_dim: int = 64,
     nheads: int = 12,
     hn_mult: float = 4.0,
     attn_beta: float = 0.125,
     attn_bias: bool = False,
     hn_bias: bool = False,
-    blocks: int = 4,
-    mask_ratio: float = 0.50,
+    blocks: int = 1,
+    mask_ratio: float = 0.85,
     weight_decay: float = 0.0001,
     b1: float = 0.9,
     b2: float = 0.999,
