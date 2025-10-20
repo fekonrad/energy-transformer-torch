@@ -372,7 +372,8 @@ def main(args):
                         "model": model.module.state_dict(),
                         "scheduler": scheduler.state_dict(),
                         "opt": opt.state_dict(),
-                        "args": args,
+                        # Store args as a plain dict for safe loading
+                        "args": vars(args),
                     }
                 except:
                     ckpt = {
@@ -380,7 +381,8 @@ def main(args):
                         "model": model.state_dict(),
                         "scheduler": scheduler.state_dict(),
                         "opt": opt.state_dict(),
-                        "args": args,
+                        # Store args as a plain dict for safe loading
+                        "args": vars(args),
                     }
                 torch.save(ckpt, MODEL_FOLDER + f"/{i}.pth")
 

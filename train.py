@@ -94,15 +94,15 @@ def main(args):
 
     start_epoch = 1
     # Always start training from scratch: disable automatic checkpoint loading
-    # latest_checkpoint = get_latest_file(MODEL_FOLDER, ".pth")
-    # if latest_checkpoint is not None:
-    #     if accelerator.is_main_process:
-    #         print(f"Found latest checkpoint file: {latest_checkpoint}", flush=True)
-    #     checkpoint = torch.load(latest_checkpoint, map_location="cpu")
-    #     start_epoch = checkpoint["epoch"]
-    #     opt.load_state_dict(checkpoint["opt"])
-    #     model.load_state_dict(checkpoint["model"])
-    #     scheduler.load_state_dict(checkpoint["scheduler"])
+    latest_checkpoint = get_latest_file(MODEL_FOLDER, ".pth")
+    if latest_checkpoint is not None:
+        if accelerator.is_main_process:
+            print(f"Found latest checkpoint file: {latest_checkpoint}", flush=True)
+        checkpoint = torch.load(latest_checkpoint, map_location="cpu")
+        start_epoch = checkpoint["epoch"]
+        opt.load_state_dict(checkpoint["opt"])
+        model.load_state_dict(checkpoint["model"])
+        scheduler.load_state_dict(checkpoint["scheduler"])
 
     model, opt, train_loader, test_loader, scheduler = accelerator.prepare(
         model, opt, train_loader, test_loader, scheduler
@@ -120,22 +120,21 @@ def main(args):
 
         start_time = time()
         for x, _ in train_loader:
-            # grab mask indices
+            # grab mask indices used to hide input patches, but train on all tokens
             batch_id, mask_id = gen_mask_id(NUM_PATCH, NUM_MASKS, x.size(0))
 
-            # grab the supposed-masked tokens as labels
-            y = patch_fn(x)[batch_id, mask_id]
+            # full token targets over all patches
+            y_full = patch_fn(x)
 
-            x, y, batch_id, mask_id = map(
-                lambda z: z.to(device), (x, y, batch_id, mask_id)
+            x, y_full, batch_id, mask_id = map(
+                lambda z: z.to(device), (x, y_full, batch_id, mask_id)
             )
 
+            # model predicts all tokens; provide mask to hide inputs at masked locations
             pred = model(x, mask=(batch_id, mask_id), alpha=args.alpha)
 
-            # grab recovered mask-tokens
-            yh = pred[batch_id, mask_id]
-
-            loss = reduce((yh - y) ** 2, "b ... -> b", "mean").mean()
+            # MSE over all tokens/patches
+            loss = reduce((pred - y_full) ** 2, "b ... -> b", "mean").mean()
             accelerator.backward(loss)
 
             if accelerator.sync_gradients:
@@ -195,7 +194,8 @@ def main(args):
                         "model": model.module.state_dict(),
                         "scheduler": scheduler.state_dict(),
                         "opt": opt.state_dict(),
-                        "args": args,
+                        # Avoid storing argparse.Namespace to keep checkpoints safe-loadable
+                        "args": vars(args),
                     }
                 except:
                     ckpt = {
@@ -203,7 +203,8 @@ def main(args):
                         "model": model.state_dict(),
                         "scheduler": scheduler.state_dict(),
                         "opt": opt.state_dict(),
-                        "args": args,
+                        # Avoid storing argparse.Namespace to keep checkpoints safe-loadable
+                        "args": vars(args),
                     }
                 torch.save(ckpt, MODEL_FOLDER + f"/{i}.pth")
 
